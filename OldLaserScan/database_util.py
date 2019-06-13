@@ -1,0 +1,282 @@
+import time
+import numpy as np
+from numpy import loadtxt
+import getpass
+import os
+import subprocess as sp
+import socket
+import sys
+import glob
+from bisect import bisect_left
+
+vmeRawDataDir = "/home/daq/Data/CMSTiming/"
+scopeRawDataDir = "/home/daq/Data/NetScopeTiming/"
+runRegistryDir = "/home/daq/LaserScan/RunRegistry/"
+scanRegistryDir = "/home/daq/LaserScan/ScanRegistry/"
+fillRegistryDir = "/home/daq/Data/FillRegistry/"
+labviewDirPath = "/media/network/a/LABVIEW PROGRAMS AND TEXT FILES/"
+otsRunFilename = "/home/daq/otsdaq/srcs/otsdaq_cmstiming/Data_2018_09_September/ServiceData/RunNumber/OtherRuns0NextRunNumber.txt"
+
+def run_exists(run_number, vors):
+    if vors == 'vme':
+        rawPath = "%s/RawDataSaver0CMSVMETiming_Run%i_0_Raw.dat" % (vmeRawDataDir, run_number)
+    if vors == 'scope':
+        rawPath = "%s/RawDataSaver0NetScopeTiming_Run%i_0_Raw.dat" % (scopeRawDataDir, run_number)        
+    return os.path.exists(rawPath)
+
+def greatest_number_less_than_value(seq,value):
+    if bisect_left(seq,value)>0:
+        return seq[bisect_left(seq,value)-1]
+    else: return seq[0]
+
+def run_registry_exists(run_number):
+    rawPath = "%srun%i.txt" % (runRegistryDir, run_number)
+    #print rawPath
+    return os.path.exists(rawPath)
+
+def get_run_number(): #include otsdaq run number also
+    #otsmax = max([int(x.split("%srun" % runRegistryDir)[1].split(".txt")[0]) for x in glob.glob("%srun*" % runRegistryDir)])
+    next_run_number = open(otsRunFilename, "r")
+    run_number = int(next_run_number.read())
+    #run_number = otsmax
+    return run_number
+
+
+def get_next_run_number():
+    #Find next run number, without conflict with labview or waveform files
+    glob_arg = "%stime_*" %labviewDirPath
+    split_arg = "%stime_" %labviewDirPath
+    labview_max = max([int(x.split(split_arg)[1].split(".txt")[0]) for x in glob.glob(glob_arg)])
+
+    glob_arg = "%srun*" %runRegistryDir
+    split_arg = "%srun" %runRegistryDir
+    #print glob_arg
+    #print glob.glob(glob_arg)
+    otsmax = max([int(x.split(split_arg)[1].split(".txt")[0]) for x in glob.glob(glob_arg)])
+    next_run_number = max(labview_max,otsmax) + 1
+    return next_run_number
+
+
+def get_next_fill_num():
+    path = "%s/next_fill_number.txt" % fillRegistryDir
+    fill_number = open(path, "r")
+    fill = int(fill_number.read())
+    fill_number.close()
+    return fill
+
+def increment_fill_num():
+    fill_number = get_next_fill_num()
+    path = "%s/next_fill_number.txt" % fillRegistryDir
+    fillNumberLog = open(path, "w")
+    fillNumberLog.write(str(fill_number + 1))
+    fillNumberLog.close()
+    return
+
+def append_fillfile(fill_number,run_number):
+    fillFilePath = "%s/Fill%i.txt" % (fillRegistryDir,fill_number)
+    fillFile = open(fillFilePath,"a")
+    fillFile.write(str(run_number)+"\n")
+
+def write_short_runfile(fill_number,run_number):
+    runfile_handle = open("%srun%d.txt" % (runRegistryDir,run_number), "w") 
+    runfile_handle.write(str(run_number)+ "\n")
+    runfile_handle.write(str(fill_number)+ "\n")
+    runfile_handle.close()
+
+
+def write_runfile(a, run_number, scan_number, vors, board_sn, bias_volt, laser_amp, laser_fre, amp_volt, scan_in, scan_stepsize, beam_spotsize, temp):
+    runfile_handle = open("%srun%d.txt" % (runRegistryDir,run_number), "a+") 
+    runfile_handle.write(str(a) + "\n") #str(lab.motor_pos())
+    runfile_handle.write(str(run_number)+ "\n")
+    runfile_handle.write(str(scan_number)+ "\n")
+    runfile_handle.write(vors+ "\n")
+    runfile_handle.write(board_sn+ "\n")
+    runfile_handle.write(bias_volt+ "\n")
+    runfile_handle.write(laser_amp+ "\n")
+    runfile_handle.write(laser_fre+ "\n")
+    runfile_handle.write(amp_volt+ "\n")
+    runfile_handle.write(scan_in+ "\n")
+    runfile_handle.write(scan_stepsize+ "\n")
+    runfile_handle.write(beam_spotsize+ "\n")
+    runfile_handle.write(temp+ "\n")
+    runfile_handle.close()
+
+def write_scanfile(start_run_number, stop_run_number, scan_number, a, b, vors, board_sn, bias_volt, laser_amp, laser_fre, amp_volt, scan_in, scan_stepsize, beam_spotsize, temp):
+    scanfile_handle = open("%sscan%d.txt" % (scanRegistryDir,scan_number), "a+") 
+    scanfile_handle.write(str(start_run_number)+ "\n")
+    scanfile_handle.write(str(stop_run_number)+ "\n")
+    scanfile_handle.write(str(scan_number)+ "\n")
+    scanfile_handle.write(vors+ "\n")
+    scanfile_handle.write(scan_in+ "\n")
+    scanfile_handle.write(board_sn+ "\n")
+    scanfile_handle.write(bias_volt+ "\n")
+    scanfile_handle.write(laser_amp+ "\n")
+    scanfile_handle.write(laser_fre+ "\n")
+    scanfile_handle.write(amp_volt+ "\n")
+    scanfile_handle.write(scan_stepsize+ "\n")
+    scanfile_handle.write(beam_spotsize+ "\n")
+    scanfile_handle.write(temp+ "\n")
+    if scan_in == 'x' or scan_in == 'y':
+        scanfile_handle.write(str(a)+ "\n") #Initial motor position
+        scanfile_handle.write(str(b)+ "\n") #Final motor position
+    elif scan_in == 't':
+        scanfile_handle.write(str(a)+ "\n") #Single position
+    scanfile_handle.close()
+
+def append_scanfile(i, scan_number):
+    scanfile_handle = open("%sscan%d.txt" % (scanRegistryDir,scan_number), "a+") 
+    scanfile_handle.write(i + "\n")
+    scanfile_handle.close()
+
+def process_runs(scan_number):
+    print '############################PROCESSING RUNS#############################'
+    #Calling a script to combine the trees and make text files for plotting.
+    scan_lines = [line.rstrip('\n') for line in open("%sscan%d.txt"  % (scanRegistryDir,scan_number))]
+    start_run_number = scan_lines[0]
+    stop_run_number = scan_lines[1]
+    vors = scan_lines[3]
+    if vors == 'vme':
+        isvme = 1
+    elif vors == 'scope':
+        isvme = 0
+    print 'Start run number: ', int(start_run_number)
+    print 'Stop run number: ', int(stop_run_number)
+    n_processed = 0
+    for i in range (int(start_run_number), int(stop_run_number) + 1):   
+        if run_exists(i,vors) and run_registry_exists(i):       
+            run_lines = [line.rstrip('\n') for line in open("%srun%d.txt"  % (runRegistryDir,i))]
+            motor_pos = run_lines[0]
+            print 'Motor position: ', float(motor_pos)
+            combineCmd = ''' root -l -q 'combine.c("%s",%d,%d,%f)' ''' % (str(i),scan_number,isvme, float(motor_pos))
+            os.system(combineCmd)
+            n_processed = n_processed + 1
+    print 'Processed %i out of expected %i runs attempted in scan.' %(n_processed , int(stop_run_number)-int(start_run_number)+1)
+
+
+def dattoroot(scan_number):
+    print '############################CONVERTING TO ROOT FILES#############################'
+    scan_lines = [line.rstrip('\n') for line in open("%sscan%d.txt"  % (scanRegistryDir,scan_number))]
+    start_run_number = scan_lines[0]
+    stop_run_number = scan_lines[1]
+    vors = scan_lines[3]
+
+    print 'Start run number: ', int(start_run_number)
+    print 'Stop run number: ', int(stop_run_number)
+    n_processed = 0
+    for i in range (int(start_run_number), int(stop_run_number) + 1):   
+        if run_exists(i,vors) and run_registry_exists(i):
+            if vors == 'vme':
+                isvme = 1
+                dattorootCmd = ". /home/daq/TimingDAQ/dattoroot.sh /home/daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run%i_0_Raw.dat /home/daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run%i_0_Raw.root" % ( i, i)        
+            elif vors == 'scope':
+                isvme = 0
+                dattorootCmd = ". /home/daq/TimingDAQ/dattorootscope.sh /home/daq/Data/NetScopeTiming/RawDataSaver0NetScope_Run%i_0_Raw.dat /home/daq/Data/NetScopeTiming/RawDataSaver0NetScope_Run%i_0_Raw.root" %(i, i)       
+            
+            os.system(dattorootCmd);
+            n_processed = n_processed + 1
+    print 'Converted %i out of expected %i runs attempted in scan.' % (n_processed , int(stop_run_number)-int(start_run_number)+1)
+
+
+def analysis_plot(scan_number):
+    scan_lines = [line.rstrip('\n') for line in open("%sscan%d.txt"  % (scanRegistryDir,scan_number))]
+    vors = scan_lines[3]
+    if vors == 'vme':
+        isvme = 1
+    elif vors == 'scope':
+        isvme = 0
+    scan_in = scan_lines[4]
+    if scan_in == 'x' or scan_in == 'y':
+        istime = 0 
+    elif scan_in == 't':
+        istime = 1
+    os.system(''' root -l 'plot.c(%d,%d,%d)' ''' % (scan_number,isvme, istime))
+
+
+
+
+def processing_lab_meas(fill_number):
+    scan_lines = [line.rstrip('\n') for line in open("%sscan%d.txt"  % (scanRegistryDir,scan_number))]
+    vors = scan_lines[3]
+    if vors == 'vme':
+        isvme = 1
+    elif vors == 'scope':
+        isvme = 0
+    scan_in = scan_lines[4]
+    if scan_in == 'x' or scan_in == 'y':
+        istime = 0 
+    elif scan_in == 't':
+        istime = 1
+    os.system(''' root -l 'plot.c(%d,%d,%d)' ''' % (scan_number,isvme, istime))
+
+
+def new_sync_labview_files(lab_sync_abs_path, timestamp_abs_path, labview_unsync_base_path):
+    #ots file 
+    bool = True
+    ots_time_list = np.loadtxt(timestamp_abs_path, delimiter=' ', unpack=False).tolist()
+    if len(ots_time_list) != 0:        
+        otstime_lines = [line.rstrip('\n') for line in open(timestamp_abs_path)]
+        ots_time_start = float(otstime_lines[0])
+        ots_time_stop = float(otstime_lines[len(otstime_lines) - 1])
+
+        #labview files for start and stop
+        labview_file_list = sorted([float(x.split("lab_meas_unsync_")[-1].split(".txt")[0]) for x in glob.glob(labview_unsync_base_path + "/lab_meas_unsync_*")])
+        exact_labview_file_start = greatest_number_less_than_value(labview_file_list, ots_time_start)
+        exact_labview_file_stop = greatest_number_less_than_value(labview_file_list, ots_time_stop)
+        index_labview_file_start = labview_file_list.index(exact_labview_file_start)
+        index_labview_file_stop = labview_file_list.index(exact_labview_file_stop)
+
+        #Result array from all labview files between start and stop
+        all_labview_array = np.array([])
+        for i in range(index_labview_file_start, index_labview_file_stop + 1):
+            labview_file_name = labview_unsync_base_path + "/lab_meas_unsync_%.3f.txt" % labview_file_list[i]
+            labview_array = np.array(np.loadtxt(labview_file_name, delimiter='\t', unpack=False))
+            if i == index_labview_file_start:
+                all_labview_array = labview_array            
+            else: 
+                all_labview_array = np.vstack((all_labview_array, labview_array))
+            if len(all_labview_array.shape) == 1:
+                all_labview_array_time_list = all_labview_array[0]
+            else:
+                all_labview_array_time_list = all_labview_array[:,0].tolist()
+ 
+        #Synchronizing both the files
+        synced_array = np.array([])
+        for i in range(len(ots_time_list)):
+            print i
+            if (not isinstance(all_labview_array_time_list,list)):
+                labview_time = all_labview_array_time_list
+                delta_time = labview_time - ots_time_list[i]
+                if abs(delta_time) > 100:
+                    labview_warning = 1
+                    print 'The difference in timestamps is greater than 100s, probably the instruments were off!!!!!'
+                    bool = False
+                    return bool
+                    break
+                else:
+                    labview_warning = 0
+                    if i==0:        
+                        synced_array = np.append(all_labview_array, [labview_warning, delta_time])
+                    else:
+                        synced_array = np.vstack((synced_array,np.append(all_labview_array, [labview_warning, delta_time])))
+            else:        
+                labview_time = min(all_labview_array_time_list, key=lambda x:abs(x-float(ots_time_list[i])))
+                delta_time = labview_time - ots_time_list[i]
+                if abs(delta_time) > 100:
+                    labview_warning = 1
+                    print 'The difference in timestamps is greater than 100s, probably the instruments were off!!!!!'
+                    bool = False
+                    return bool
+                    break
+                else:
+                    labview_warning = 0
+                    index_labview_time = all_labview_array_time_list.index(float(labview_time))    
+                    if i==0:
+                        synced_array = np.append(all_labview_array[index_labview_time,:], [labview_warning, delta_time])  
+                    else:
+                        synced_array = np.vstack((synced_array,np.append(all_labview_array[index_labview_time,:], [labview_warning, delta_time])))
+        np.savetxt(lab_sync_abs_path, synced_array, delimiter=' ')         
+    else:
+        print 'Timestamp file is empty'
+        bool = False
+    return bool
+

@@ -1,0 +1,184 @@
+#include <iostream>
+#include <fstream>
+using namespace std;
+
+void combineY(TString run_number, int scan_number, int isvme, float motor_pos)
+{
+  //TString dattorootfile = Form(". /home/daq/TimingDAQ/dattoroot.sh /home/daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run%s_0_Raw.dat /home/daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run%s_0_Raw.root", run_number.Data(), run_number.Data());
+  //system(dattorootfile);
+ if (isvme == 0)
+   {
+     TFile f1("~daq/Data/NetScopeTiming/RawDataSaver0NetScope_Run" + run_number + "_0_Raw.root", "UPDATE");
+     TTree *pulse = (TTree*)f1.Get("pulse");
+     TTree *ft1 = new TTree("lab_meas", "lab_meas"); 
+     ft1->ReadFile("/media/network/a/LABVIEW PROGRAMS AND TEXT FILES/lab_meas_" + run_number, "sm1_v:sm1_i:sm2_v:sm2_i:sm3_v:sm3_i:hvpsu_v:hvpsu_i:lvpsu_ch3_v:lvpsu_ch3_i:lvpsu_ch2_v:lvpsu_ch2_i:lvpsu_ch1_v:lvpsu_ch1_i:resistance");
+     f1.Write(); 
+     //amplitude
+     TH1F * h1 = new TH1F("h1","",100,-400,400);
+     h1->StatOverflows();
+     pulse->Project("h1","amp[0]","");
+     TH1F * h2 = new TH1F("h2","",100,-400,400);
+     h2->StatOverflows();
+     pulse->Project("h2","amp[1]","");
+     TH1F * h3 = new TH1F("h3","",100,-400,400);
+     h3->StatOverflows();
+     pulse->Project("h3","amp[2]","");
+     TH1F * h4 = new TH1F("h4","",100,-400,400);
+     h4->StatOverflows();
+     pulse->Project("h4","amp[3]","");
+
+     //time resolution
+     TH1F * tr1 = new TH1F("tr1","",100,-400,400);
+     tr1->StatOverflows();
+     pulse->Project("tr1","LP1_30[1]-LP1_30[0]","LP1_30[1]>0");
+     TH1F * tr2 = new TH1F("tr2","",100,-400,400);
+     tr2->StatOverflows();
+     pulse->Project("tr2","LP1_30[2]-LP1_30[0]","LP1_30[2]>0");
+     TH1F * tr3 = new TH1F("tr3","",100,-400,400);
+     tr3->StatOverflows();
+     pulse->Project("tr3","LP1_30[3]-LP1_30[0]","LP1_30[3]>0");
+
+
+     //Efficiency
+     float num1 = pulse->GetEntries("LP1_30[1]>0");
+     float den = pulse->GetEntries();
+     float eff1 = num1/den;
+     float num2 = pulse->GetEntries("LP1_30[2]>0");
+     float eff2 = num2/den;
+     float num3 = pulse->GetEntries("LP1_30[3]>0");
+     float eff3 = num3/den;
+
+     //GET LABVIEW CURRENT
+     TFile f2("~daq/Data/NetScopeTiming/RawDataSaver0NetScope_Run" + run_number + "_0_Raw.root", "READ");
+     TTree *lab_meas = (TTree*)f2.Get("lab_meas");
+
+     TH1F * l1 = new TH1F("l1","",100,-400,400);
+     l1->StatOverflows();
+     lab_meas->Project("l1","sm1_v","sm1_v != 0");
+     TH1F * l2 = new TH1F("l2","",100,-400,400);
+     l2->StatOverflows();
+     lab_meas->Project("l2","sm1_i","sm1_i != 0");
+     TH1F * l3 = new TH1F("l3","",100,-400,400);
+     l3->StatOverflows();
+     lab_meas->Project("l3","resistance","resistance !=0");
+
+     //Writing data to a file
+     TString file1 = Form("/home/daq/Data/AnalysisScope/processdata_%d.txt", scan_number);
+     ofstream myfile;
+     myfile.open (file1, ios::app);     
+     myfile<<motor_pos<<" "<<run_number<<" "<<h2->GetMean()<<" "<<h2->GetMeanError()<<" "<<h3->GetMean()<<" "<<h3->GetMeanError()<<" "<<h4->GetMean()<<" "<<h4->GetMeanError()<<" "<<eff1<<" "<<eff2<<" "<<eff3<<" "<<tr1->GetRMS()<<" "<<tr1->GetRMSError()<<" "<<tr2->GetRMS()<<" "<<tr2->GetRMSError()<<" "<<tr3->GetRMS()<<" "<<tr3->GetRMSError()<<" "<<l1->GetMean()<<" "<<l1->GetMeanError()<<" "<<l2->GetMean()<<" "<<l2->GetMeanError()<<endl;
+     myfile.close();
+
+     f1.Close();
+     f2.Close();
+   }
+ else if (isvme == 1)
+   { 
+     TFile f1("~daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run" + run_number + "_0_Raw.root", "UPDATE");
+     TTree *pulse = (TTree*)f1.Get("pulse");
+     //TTree *ft1 = new TTree("lab_meas", "lab_meas"); 
+     //ft1->ReadFile("/media/network/a/LABVIEW PROGRAMS AND TEXT FILES/lab_meas_" + run_number, "sm1_v:sm1_i:sm2_v:sm2_i:sm3_v:sm3_i:hvpsu_v:hvpsu_i:lvpsu_ch3_v:lvpsu_ch3_i:lvpsu_ch2_v:lvpsu_ch2_i:lvpsu_ch1_v:lvpsu_ch1_i:resistance");
+     //f1.Write(); 
+     //amplitude
+     TH1F * h1 = new TH1F("h1","",100,-400,400);
+     h1->StatOverflows();
+     pulse->Project("h1","amp[0]","");
+     TH1F * h2 = new TH1F("h2","",100,-400,400);
+     h2->StatOverflows();
+     pulse->Project("h2","amp[1]","");
+     TH1F * h3 = new TH1F("h3","",100,-400,400);
+     h3->StatOverflows();
+     pulse->Project("h3","amp[2]","");
+     TH1F * h4 = new TH1F("h4","",100,-400,400);
+     h4->StatOverflows();
+     pulse->Project("h4","amp[3]","");
+     TH1F * h5 = new TH1F("h5","",100,-400,400);
+     h5->StatOverflows();
+     pulse->Project("h5","amp[4]","");
+     TH1F * h6 = new TH1F("h6","",100,-400,400);
+     h6->StatOverflows();
+     pulse->Project("h6","amp[5]","");
+     TH1F * h7 = new TH1F("h7","",100,-400,400);
+     h7->StatOverflows();
+     pulse->Project("h7","amp[6]","");
+     TH1F * h8 = new TH1F("h8","",100,-400,400);
+     h8->StatOverflows();
+     pulse->Project("h8","amp[7]","");
+     TH1F * h9 = new TH1F("h9","",100,-400,400);
+     h9->StatOverflows();
+     pulse->Project("h9","amp[8]","");
+
+     /*//time resolution
+     TH1F * tr1 = new TH1F("tr1","",100,-400,400);
+     tr1->StatOverflows();
+     pulse->Project("tr1","LP1_30[0]-LP1_30[8]","LP1_30[0]>0");
+     TH1F * tr2 = new TH1F("tr2","",100,-400,400);
+     tr2->StatOverflows();
+     pulse->Project("tr2","LP1_30[1]-LP1_30[8]","LP1_30[1]>0");
+     TH1F * tr3 = new TH1F("tr3","",100,-400,400);
+     tr3->StatOverflows();
+     pulse->Project("tr3","LP1_30[2]-LP1_30[8]","LP1_30[2]>0");
+     TH1F * tr4 = new TH1F("tr4","",100,-400,400);
+     tr4->StatOverflows();
+     pulse->Project("tr4","LP1_30[3]-LP1_30[8]","LP1_30[3]>0");
+     TH1F * tr5 = new TH1F("tr5","",100,-400,400);
+     tr5->StatOverflows();
+     pulse->Project("tr5","LP1_30[4]-LP1_30[8]","LP1_30[4]>0");
+     TH1F * tr6 = new TH1F("tr6","",100,-400,400);
+     tr6->StatOverflows();
+     pulse->Project("tr6","LP1_30[5]-LP1_30[8]","LP1_30[5]>0");
+     TH1F * tr7 = new TH1F("tr7","",100,-400,400);
+     tr7->StatOverflows();
+     pulse->Project("tr7","LP1_30[6]-LP1_30[8]","LP1_30[6]>0");
+     TH1F * tr8 = new TH1F("tr8","",100,-400,400);
+     tr8->StatOverflows();
+     pulse->Project("tr8","LP1_30[7]-LP1_30[8]","LP1_30[7]>0");
+
+
+     //Efficiency
+     float num1 = pulse->GetEntries("LP1_30[0]>0");
+     float den = pulse->GetEntries();
+     float eff1 = num1/den;
+     float num2 = pulse->GetEntries("LP1_30[1]>0");
+     float eff2 = num2/den;
+     float num3 = pulse->GetEntries("LP1_30[2]>0");
+     float eff3 = num3/den;
+     float num4 = pulse->GetEntries("LP1_30[3]>0");
+     float eff4 = num4/den;
+     float num5 = pulse->GetEntries("LP1_30[4]>0");
+     float eff5 = num5/den;
+     float num6 = pulse->GetEntries("LP1_30[5]>0");
+     float eff6 = num6/den;
+     float num7 = pulse->GetEntries("LP1_30[6]>0");
+     float eff7 = num7/den;
+     float num8 = pulse->GetEntries("LP1_30[7]>0");
+     float eff8 = num8/den;
+     
+     //GET LABVIEW CURRENT
+     TFile f2("~daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run" + run_number + "_0_Raw.root", "READ");
+     TTree *lab_meas = (TTree*)f2.Get("lab_meas");
+
+     TH1F * l1 = new TH1F("l1","",100,-400,400);
+     l1->StatOverflows();
+     lab_meas->Project("l1","sm1_v","sm1_v != 0");
+     TH1F * l2 = new TH1F("l2","",100,-400,400);
+     l2->StatOverflows();
+     lab_meas->Project("l2","sm1_i","sm1_i != 0");
+     TH1F * l3 = new TH1F("l3","",100,-400,400);
+     l3->StatOverflows();
+     lab_meas->Project("l3","resistance","resistance !=0");
+     */
+     //Writing data to a file
+     TString file1 = Form("/home/daq/LaserScan/AnalysisVME/processdata_%i.txt", scan_number);
+     ofstream myfile;
+     //cout<<file1<<endl;
+     myfile.open(file1, ios::app);
+     myfile<<motor_pos<<" "<<run_number<<" "<<h1->GetMean()<<" "<<h1->GetMeanError()<<" "<<h2->GetMean()<<" "<<h2->GetMeanError()<<endl;//" "<<h3->GetMean()<<" "<<h3->GetMeanError()<<" "<<h4->GetMean()<<" "<<h4->GetMeanError()<<" "<<h5->GetMean()<<" "<<h5->GetMeanError()<<" "<<h6->GetMean()<<" "<<h6->GetMeanError()<<" "<<h7->GetMean()<<" "<<h7->GetMeanError()<<" "<<h8->GetMean()<<" "<<h8->GetMeanError()<<endl;//" "<<eff1<<" "<<eff2<<" "<<eff3<<" "<<eff4<<" "<<eff5<<" "<<eff6<<" "<<eff7<<" "<<eff8<<" "<<tr1->GetRMS()<<" "<<tr1->GetRMSError()<<" "<<tr2->GetRMS()<<" "<<tr2->GetRMSError()<<" "<<tr3->GetRMS()<<" "<<tr3->GetRMSError()<<" "<<tr4->GetRMS()<<" "<<tr4->GetRMSError()<<" "<<tr5->GetRMS()<<" "<<tr5->GetRMSError()<<" "<<tr6->GetRMS()<<" "<<tr6->GetRMSError()<<" "<<tr7->GetRMS()<<" "<<tr7->GetRMSError()<<" "<<tr8->GetRMS()<<" "<<tr8->GetRMSError()<<" "<<l1->GetMean()<<" "<<l1->GetMeanError()<<" "<<l2->GetMean()<<" "<<l2->GetMeanError()<<" "<<l3->GetMean()<<" "<<l3->GetMeanError()<<endl;
+     myfile.close();
+
+     
+     f1.Close();
+     //f2.Close();
+   }
+
+}

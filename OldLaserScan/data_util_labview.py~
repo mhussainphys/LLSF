@@ -1,0 +1,671 @@
+import time
+import numpy as np
+from numpy import loadtxt
+import getpass
+import os
+import subprocess as sp
+import socket
+import sys
+import glob
+from bisect import bisect_left
+import matplotlib.pyplot as plt
+
+def greatest_number_less_than_value(seq,value):
+    if bisect_left(seq,value)>0:
+        return seq[bisect_left(seq,value)-1]
+    else: return seq[0]
+
+def new_sync_labview_files(lab_sync_abs_path, timestamp_abs_path, labview_unsync_base_path):
+    #ots file 
+    bool = True
+    ots_time_list = np.loadtxt(timestamp_abs_path, delimiter=' ', unpack=False).tolist()
+    if len(ots_time_list) != 0:        
+        otstime_lines = [line.rstrip('\n') for line in open(timestamp_abs_path)]
+        ots_time_start = float(otstime_lines[0])
+        ots_time_stop = float(otstime_lines[len(otstime_lines) - 1])
+
+        #labview files for start and stop
+        labview_file_list = sorted([float(x.split("lab_meas_unsync_")[-1].split(".txt")[0]) for x in glob.glob(labview_unsync_base_path + "/lab_meas_unsync_*")])
+        exact_labview_file_start = greatest_number_less_than_value(labview_file_list, ots_time_start)
+        exact_labview_file_stop = greatest_number_less_than_value(labview_file_list, ots_time_stop)
+        index_labview_file_start = labview_file_list.index(exact_labview_file_start)
+        index_labview_file_stop = labview_file_list.index(exact_labview_file_stop)
+
+        #print exact_labview_file_start, exact_labview_file_stop
+        #print labview_file_list
+        #Result array from all labview files between start and stop
+        all_labview_array = np.array([])
+        for i in range(index_labview_file_start, index_labview_file_stop + 1):
+            labview_file_name = labview_unsync_base_path + "/lab_meas_unsync_%.3f.txt" % labview_file_list[i]
+            labview_array = np.array(np.loadtxt(labview_file_name, delimiter='\t', unpack=False))
+            if i == index_labview_file_start:
+                all_labview_array = labview_array            
+            else: 
+                all_labview_array = np.vstack((all_labview_array, labview_array))
+            if len(all_labview_array.shape) == 1:
+                all_labview_array_time_list = all_labview_array[0]
+            else:
+                all_labview_array_time_list = all_labview_array[:,0].tolist()
+ 
+                
+        #Synchronizing both the files
+        synced_array = np.array([])
+        for i in range(len(ots_time_list)):
+            if (not isinstance(all_labview_array_time_list,list)):
+                labview_time = all_labview_array_time_list
+                delta_time = labview_time - ots_time_list[i]
+                if abs(delta_time) > 100:
+                    labview_warning = 1
+                    print "The difference in timestamps is greater than 100s, probably the instruments were off. Could be possible that the kerberos password expired for the rsync session!!!"
+                    bool = False
+                    return bool
+                    break
+                else:
+                    labview_warning = 0
+                    if i==0:        
+                        synced_array = np.append(all_labview_array, [labview_warning, delta_time])
+                    else:
+                        synced_array = np.vstack((synced_array,np.append(all_labview_array, [labview_warning, delta_time])))
+            else:        
+                labview_time = min(all_labview_array_time_list, key=lambda x:abs(x-float(ots_time_list[i])))
+                delta_time = labview_time - ots_time_list[i]
+                if abs(delta_time) > 100:
+                    labview_warning = 1
+                    print 'The difference in timestamps is greater than 100s, probably the instruments were off!!!!!'
+                    bool = False
+                    return bool
+                    break
+                else:
+                    labview_warning = 0
+                    index_labview_time = all_labview_array_time_list.index(float(labview_time))    
+                    if i==0:
+                        synced_array = np.append(all_labview_array[index_labview_time,:], [labview_warning, delta_time])  
+                    else:
+                        synced_array = np.vstack((synced_array,np.append(all_labview_array[index_labview_time,:], [labview_warning, delta_time])))
+        np.savetxt(lab_sync_abs_path, synced_array, delimiter=' ')         
+    else:
+        print 'Timestamp file is empty'
+        bool = False
+    return bool
+
+
+
+def plot_labview_data(run_number):
+    timestamp_abs_path = "/data/TestBeam/2018_11_November_CMSTiming/VMETimestamp/timestamp%i.txt" % run_number
+    labview_unsync_base_path = "/home/otsdaq/CMSTiming_Labview/LabviewUnsyncFiles/"
+    ots_time_list = np.loadtxt(timestamp_abs_path, delimiter=' ', unpack=False).tolist()
+    if len(ots_time_list) != 0:        
+        otstime_lines = [line.rstrip('\n') for line in open(timestamp_abs_path)]
+        ots_time_start = float(otstime_lines[0])
+        ots_time_stop = float(otstime_lines[len(otstime_lines) - 1])
+
+        labview_file_list = sorted([float(x.split("lab_meas_unsync_")[-1].split(".txt")[0]) for x in glob.glob(labview_unsync_base_path + "/lab_meas_unsync_*")])
+        exact_labview_file_start = greatest_number_less_than_value(labview_file_list, ots_time_start)
+        exact_labview_file_stop = greatest_number_less_than_value(labview_file_list, ots_time_stop)
+        index_labview_file_start = labview_file_list.index(exact_labview_file_start)
+        index_labview_file_stop = labview_file_list.index(exact_labview_file_stop)
+        
+        all_labview_array = np.array([])
+        for i in range(index_labview_file_start, index_labview_file_stop + 1):
+            labview_file_name = labview_unsync_base_path + "/lab_meas_unsync_%.3f.txt" % labview_file_list[i]
+            labview_array = np.array(np.loadtxt(labview_file_name, delimiter='\t', unpack=False))
+            if i == index_labview_file_start:
+                all_labview_array = labview_array            
+            else: 
+                all_labview_array = np.vstack((all_labview_array, labview_array))
+        plt.plot(all_labview_array[:,0], all_labview_array[:,8], '.') #0 time, 1 sm1v, 2 sm1i, 3 sm2v, 4 sm2i....and so on
+        plt.show()
+    else:
+        print 'Timestamp file is empty'
+
+
+def Resistance_calc(T): #Function to calculate resistance for any temperature
+    R0 = 100 #Resistance in ohms at 0 degree celsius
+    alpha = 0.00385 
+    Delta = 1.4999 #For pure platinum
+    if T < 0:
+        Beta = 0.10863
+    elif T > 0:
+        Beta = 0
+    RT = (R0 + R0*alpha*(T - Delta*(T/100 - 1)*(T/100) - Beta*(T/100 - 1)*((T/100)**3)))*100
+    return RT
+
+
+def Temp_calc(R): #Function to calculate temperature for any resistance
+    Temp_x = np.linspace(-30, 30, num=100) #Points to be used for interpolation        
+    Resis_y = np.array([])
+    for i in range(len(Temp_x)):
+        Resis_y = np.append(Resis_y,Resistance_calc(Temp_x[i]))
+    Temperature_R = np.interp(R, Resis_y, Temp_x)
+    #plt.plot(Temp_x, Resis_y, 'o')
+    #plt.show()
+    return Temperature_R
+
+def plot_labview_data_norun():
+        labview_unsync_base_path = "/home/daq/CMSTiming_Labview/LabviewUnsyncFiles/"
+        labview_file_list = sorted([float(x.split("lab_meas_unsync_")[-1].split(".txt")[0]) for x in glob.glob(labview_unsync_base_path + "/lab_meas_unsync_5960[4-7]*")])        
+        all_labview_array = np.array([])
+        for i in range(len(labview_file_list)):
+            labview_file_name = labview_unsync_base_path + "/lab_meas_unsync_%.3f.txt" % labview_file_list[i]
+            labview_array = np.array(np.loadtxt(labview_file_name, delimiter='\t', unpack=False))
+            if i == 0:
+                all_labview_array = labview_array            
+            else: 
+                all_labview_array = np.vstack((all_labview_array, labview_array))
+        
+        Temp = np.array([])
+        itera = 0 
+        for row in all_labview_array:
+            Temp = np.append(Temp,Temp_calc(all_labview_array[itera,21]))
+            itera = itera + 1
+
+        plt.subplot(1, 3, 1)
+        plt.plot(all_labview_array[:,0]/3600 -165566.6780, all_labview_array[:,8]*1000000, '.') #0 time, 1 sm1v, 2 sm1i, 3 sm2v, 4 sm2i....and so on
+        plt.axis([0, 12, 0, -50])
+        plt.ylabel(u"Current (\u03bcA)")
+        plt.xlabel('Time (hours)')
+        plt.grid(True)
+
+
+        plt.subplot(1, 3, 2)
+        plt.plot(all_labview_array[:,0]/3600 -165566.6780, all_labview_array[:,7], '.') #0 time, 1 sm1v, 2 sm1i, 3 sm2v, 4 sm2i....and so on
+        plt.axis([0, 12, 0, -400])
+        plt.ylabel(u"Voltage (V)")
+        plt.xlabel('Time (hours)')
+        plt.grid(True)
+
+
+        plt.subplot(1, 3, 3)
+        plt.plot(all_labview_array[:,0]/3600 -165566.6780, Temp[:], '.') #0 time, 1 sm1v, 2 sm1i, 3 sm2v, 4 sm2i....and so on
+        plt.axis([0, 12, 0, 30])
+        plt.ylabel(u'Temperature (\u00B0C)')
+        plt.xlabel('Time (hours)')
+        plt.grid(True)
+        plt.show()
+
+def IVPlot1(run1,run2):
+        IVBasePath = "/home/daq/LabviewData/LabviewIVScanData/"
+        IVFilename1 = "run%i.txt" % run1
+        IVFilename2 = "run%i.txt" % run2
+
+        IVArray1 = np.array(np.loadtxt(IVBasePath + IVFilename1, delimiter='\t', unpack=False))
+        IVArray2 = np.array(np.loadtxt(IVBasePath + IVFilename2, delimiter='\t', unpack=False))
+        
+        fig, ax1 = plt.subplots()
+
+        ax2 = ax1.twinx()
+        ax1.plot(IVArray1[:,0]*-1, IVArray1[:,1]*-1000000, 'g.')
+        ax2.plot(IVArray1[:,0]*-1, IVArray2[:,1]*-1000000, 'b.')
+
+        ax1.set_xlabel('Voltage')
+        ax1.set_ylabel(u"Current Sensor 1 (\u03bcA)", color='g')
+        ax2.set_ylabel(u"Current Sensor 2 (\u03bcA)", color='b')
+
+        plt.show()
+
+
+
+def IVPlot2(run1,run2):
+        IVBasePath = "/home/daq/LabviewData/LabviewIVScanData/"
+        IVFilename1 = "run%i.txt" % run1
+        IVFilename2 = "run%i.txt" % run2
+
+        IVArray1 = np.array(np.loadtxt(IVBasePath + IVFilename1, delimiter='\t', unpack=False))
+        IVArray2 = np.array(np.loadtxt(IVBasePath + IVFilename2, delimiter='\t', unpack=False))
+
+        plt.figure().patch.set_facecolor('white')        
+        plt.plot(IVArray1[:,0]*-1, IVArray1[:,1]*-1000000, 'ro', label="2x8 Sensor 1")
+        plt.plot(IVArray1[:,0]*-1, IVArray2[:,1]*-1000000, 'bo', label="2x8 Sensor 2")
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.xlabel('Voltage (V)',**axis_font)
+        plt.ylabel(u"Current (\u03bcA)",**axis_font)
+        plt.axis([0, 400, 0, 50])
+        plt.legend(loc="best",prop={'size': 20})
+        plt.savefig('%srun5.png' %(IVBasePath))
+        plt.show()
+
+        
+def IVPlot(run):
+        IVBasePath = "/home/daq/LabviewData/LabviewIVScanData/"
+        IVFilename = "run%i.txt" % run
+
+        IVArray = np.array(np.loadtxt(IVBasePath + IVFilename, delimiter='\t', unpack=False))
+
+        plt.figure().patch.set_facecolor('white')        
+        plt.plot(IVArray[:,0]*-1, IVArray[:,1]*-1000000, 'ro', label="Sensor 1")
+        #plt.plot(IVArray[:,0]*-1, IVArray[:,3]*-1000000, 'bo', label="Sensor 2")
+        #plt.plot(IVArray[:,0]*-1, IVArray[:,5]*-1000000, 'go', label="Sensor 3")
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.xlabel('Voltage (V)',**axis_font)
+        plt.ylabel(u"Current (\u03bcA)",**axis_font)
+        plt.axis([0, 200, 0, 200])
+        plt.legend(loc="best",prop={'size': 20})
+        plt.savefig('%srun%s.png' %(IVBasePath,run))
+        plt.show()
+
+def LaserScanPlot(ScanNumber):
+        ProcessBase = '/home/daq/LaserScan/AnalysisVME/'
+        LaserScanArray = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, ScanNumber), delimiter=' ', unpack=False)
+        AmplitudeCut = 0
+        plt.figure().patch.set_facecolor('white')
+        
+        #for pad in range (1,9):
+        for pad in range (1,6):
+            if pad%2 == 0 and pad!=4 and pad!=1:
+                color = 'r'
+            elif pad == 4:
+                color = 'b'
+            elif pad == 1:
+                color = 'g'
+            else:
+                color = 'k'
+
+            plt.errorbar(LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),0], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2+1],color = color,marker = 'o', markersize=3, ls='none')
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.ylabel('Amplitude [mV]',**axis_font)
+        plt.xlabel("Position [mm]",**axis_font)
+        #plt.axis([47, 66 , 0, 35])
+        #plt.axis([56.25, 58 , 0, 35])
+        #plt.legend(loc="best",prop={'size': 20})
+        plt.savefig('%sscanplot%s.png' %(ProcessBase,ScanNumber))
+        plt.show()
+
+
+
+def LaserScanPlot2():
+        ProcessBase = '/home/daq/LaserScan/AnalysisVME/'
+        LaserScanArray = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 139), delimiter=' ', unpack=False)
+        LaserScanArray2 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 145), delimiter=' ', unpack=False)
+        AmplitudeCut = 5
+        plt.figure().patch.set_facecolor('white')
+        
+        for pad in range (1,9):
+            if pad%2 == 0:
+                color = 'r'
+            else:
+                color = 'k'
+            #plt.errorbar(LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),0]-49.12, LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2+1],color = 'r',marker = 'o', markersize=3, ls='none')
+            #plt.errorbar(LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),0], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2]*1.21, LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2+1],color = 'r',marker = 'o', markersize=3, ls='none')
+            plt.errorbar(LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),0], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2]*1.15, LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2+1],color = 'r',marker = 'o', markersize=3, ls='none')
+
+        
+        for pad in range (1,9):
+            if pad%2 == 0:
+                color = 'r'
+            else:
+                color = 'k'
+            #plt.errorbar(LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),0]-48.50, LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2], LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2+1],color = 'b',marker = 'o', markersize=3, ls='none')
+            plt.errorbar(LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),0], LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2], LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2+1],color = 'b',marker = 'o', markersize=3, ls='none')
+
+
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.ylabel('Amplitude [mV]',**axis_font)
+        plt.xlabel("Position [mm]",**axis_font)
+        plt.axis([7, 26 , 0, 120])
+        #plt.axis([56.25, 58 , 0, 35])
+        #plt.legend(loc="best",prop={'size': 20})
+        plt.savefig('%sscanplot%s.png' %(ProcessBase,'2boardscompare3'))
+        plt.show()
+
+def LaserScanPlotY(ScanNumber):
+        ProcessBase = '/home/daq/LaserScan/AnalysisVME/'
+        LaserScanArray = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, ScanNumber), delimiter=' ', unpack=False)
+        AmplitudeCut = 3
+        plt.figure().patch.set_facecolor('white')
+        
+        for pad in range (1,3):
+            if pad%2 == 0:
+                color = 'r'
+            else:
+                color = 'k'
+            plt.errorbar(LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),0], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2], LaserScanArray[np.logical_not(LaserScanArray[:,pad*2]<AmplitudeCut),pad*2+1],color = color,marker = 'o', markersize=3, ls='none')
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.ylabel('Amplitude [mV]',**axis_font)
+        plt.xlabel("Position [mm]",**axis_font)
+        #plt.axis([47, 66 , 0, 35])
+        #plt.axis([56.25, 58 , 0, 35])
+        #plt.legend(loc="best",prop={'size': 20})
+        plt.savefig('%sscanplotY%s.png' %(ProcessBase,ScanNumber))
+        plt.show()
+        
+        
+def Scatter3D(ScanNumber):
+       AmplitudeCut = 4
+       #plt.figure().patch.set_facecolor('white')
+       ax = plt.axes(projection='3d')
+       for pad in range (1,9):
+            if pad%2 == 0:
+                color = 'r'
+            else:
+                color = 'k'
+            x=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0].tolist()
+            y = [8]*len(x)
+            z=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2].tolist()
+    #ax.scatter(x, y, c=z, s=50, edgecolor='')
+            ax.scatter3D(x, y, z, c=zdata, cmap='Greens');
+       #plt.show()
+
+
+def Scatter():
+        ProcessBase = '/home/daq/LaserScan/AnalysisVME/'        
+        LaserScanArray1 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 115), delimiter=' ', unpack=False)
+        LaserScanArray2 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 0), delimiter=' ', unpack=False)
+        AmplitudeCut = 5
+        LaserScanArray1[:,0] = LaserScanArray1[:,0] - LaserScanArray1[:,0].min(axis=0) - 0.5
+        LaserScanArray2[:,0] = LaserScanArray2[:,0] - LaserScanArray2[:,0].min(axis=0)
+        #LaserScanArray2[:,1] = LaserScanArray2[:,1]/LaserScanArray2[:,1].max(axis=0)
+
+
+        plt.figure().patch.set_facecolor('white')
+
+        for pad in range (1,9):
+            if pad%2 == 0:
+                color = 'r'
+            else:
+                color = 'k'
+            #LaserScanArray1[:,pad*2] = LaserScanArray1[:,pad*2]/27
+            LaserScanArray1[:,pad*2+1] = 0
+#0.244
+            plt.errorbar(LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0], LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2] +  LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2]*0.42, LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2+1],color ='r',marker = 'o', markersize=3, ls='none')
+            #plt.errorbar(LaserScanArray1[:,0], LaserScanArray1[:,pad*2], LaserScanArray1[:,pad*2+1],color ='r',marker = 'o', markersize=3, ls='none')
+
+        plt.errorbar(LaserScanArray2[:,0], LaserScanArray2[:,1], LaserScanArray2[:,2],color = 'b',marker = 'o', markersize=3, ls='none')
+
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.ylabel('Amplitude [mV]',**axis_font)
+        plt.xlabel("Position [mm]",**axis_font)
+        #plt.axis([47, 66 , 0, 35])
+
+        #plt.legend(loc="best",prop={'size': 20})                                                                                 
+        plt.savefig('%sscanplot%s.png' %(ProcessBase,'compare'))
+        plt.show()    
+
+
+
+def Scatter2():
+        ProcessBase = '/home/daq/LaserScan/AnalysisVME/'        
+        LaserScanArray1 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 116), delimiter=' ', unpack=False)
+        AmplitudeCut = 0
+        LaserScanArray1 = LaserScanArray1/ LaserScanArray1.max(axis=0)
+
+        plt.figure().patch.set_facecolor('white')
+
+        for pad in range (1,9):
+            if pad%2 == 0:
+                color = 'r'
+            else:
+                color = 'k'
+            plt.errorbar(LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0], LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2],color ='r',marker = 'o', markersize=3, ls='none')
+
+
+        axis_font = {'fontname':'Arial', 'size':'15'}
+        plt.ylabel('Amplitude [mV]',**axis_font)
+        plt.xlabel("Position [mm]",**axis_font)
+        #plt.axis([47, 66 , 0, 35])
+
+        #plt.legend(loc="best",prop={'size': 20})                                                                                 
+        plt.savefig('%sscanplot%s.png' %(ProcessBase,'compare'))
+        plt.show()    
+
+
+
+def Scatter3DAlly():
+    from matplotlib import pyplot
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = pyplot.figure()
+    ax = Axes3D(fig)
+    AmplitudeCut = 4
+    ProcessBase = '/home/daq/LaserScan/AnalysisVME/'
+    LaserScanArray1 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 122), delimiter=' ', unpack=False)
+    LaserScanArray2 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 117), delimiter=' ', unpack=False)
+    LaserScanArray3 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 118), delimiter=' ', unpack=False)
+    LaserScanArray4 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 119), delimiter=' ', unpack=False)
+    LaserScanArray5 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 120), delimiter=' ', unpack=False)
+    LaserScanArray6 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 121), delimiter=' ', unpack=False)
+    for pad in range (1,9):
+        x=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [8]*len(x)
+        z=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8 mm', c='r')
+
+    for pad in range (1,9):
+        x=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [7.61]*len(x)
+        z=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 7.61 mm', c='k')
+    
+    for pad in range (1,9):
+        x=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [8.4]*len(x)
+        z=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8.4 mm', c='c')
+
+    for pad in range (1,9):
+        x=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [10.25]*len(x)
+        z=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.25 mm', c='m')
+
+    for pad in range (1,9):
+        x=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [10.63]*len(x)
+        z=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.63 mm', c='b')
+
+    for pad in range (1,9):
+        x=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [9.87]*len(x)
+        z=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+    
+    axis_font = {'fontname':'Arial', 'size':'15'}
+    ax.set_xlabel("X Position [mm]",**axis_font)
+    ax.set_ylabel("Y Position [mm]",**axis_font)
+    ax.set_zlabel("Amplitude [mV]",**axis_font)
+    ax.set_zbound(upper=30,lower=0)
+    ax.set_xbound(upper=49,lower=65)
+    ax.set_ybound(upper=7,lower=12)
+    ax.legend()
+    #ax.ylabel('Y Position [mm]',**axis_font)
+    #ax.xlabel("X Position [mm]",**axis_font)
+    #ax.zlabel('Amplitude [mV]',**axis_font)
+    plt.savefig('%sscan3D_1.png' %(ProcessBase))
+    pyplot.show()
+
+
+def Scatter3DAllx():
+    from matplotlib import pyplot
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = pyplot.figure()
+    ax = Axes3D(fig)
+    AmplitudeCut = 4
+    ProcessBase = '/home/daq/LaserScan/AnalysisVME/'
+    LaserScanArray1 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 123), delimiter=' ', unpack=False)
+    LaserScanArray2 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 124), delimiter=' ', unpack=False)
+    LaserScanArray3 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 125), delimiter=' ', unpack=False)
+    LaserScanArray4 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 126), delimiter=' ', unpack=False)
+    LaserScanArray5 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 127), delimiter=' ', unpack=False)
+    LaserScanArray6 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 130), delimiter=' ', unpack=False)
+    LaserScanArray7 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 131), delimiter=' ', unpack=False)
+    LaserScanArray8 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 132), delimiter=' ', unpack=False)
+    for pad in range (1,3):
+        x=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [49.5]*len(x)
+        z=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8 mm', c='r')
+
+    for pad in range (1,3):
+        x=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [51.5]*len(x)
+        z=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 7.61 mm', c='k')
+    
+    for pad in range (1,3):
+        x=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [53.5]*len(x)
+        z=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8.4 mm', c='c')
+
+    for pad in range (1,3):
+        x=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [55.5]*len(x)
+        z=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.25 mm', c='m')
+
+    for pad in range (1,3):
+        x=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [57.5]*len(x)
+        z=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.63 mm', c='b')
+
+    for pad in range (1,3):
+        x=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [59.5]*len(x)
+        z=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+
+    for pad in range (1,3):
+        x=LaserScanArray7[np.logical_not(LaserScanArray7[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [61.5]*len(x)
+        z=LaserScanArray7[np.logical_not(LaserScanArray7[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+
+    for pad in range (1,3):
+        x=LaserScanArray8[np.logical_not(LaserScanArray8[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [63.5]*len(x)
+        z=LaserScanArray8[np.logical_not(LaserScanArray8[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+    
+    axis_font = {'fontname':'Arial', 'size':'15'}
+    ax.set_xlabel("Y Position [mm]",**axis_font)
+    ax.set_ylabel("X Position [mm]",**axis_font)
+    ax.set_zlabel("Amplitude [mV]",**axis_font)
+    ax.set_zbound(upper=30,lower=0)
+    ax.set_ybound(upper=49,lower=65)
+    ax.set_xbound(upper=7,lower=12)
+    ax.legend()
+    #ax.ylabel('Y Position [mm]',**axis_font)
+    #ax.xlabel("X Position [mm]",**axis_font)
+    #ax.zlabel('Amplitude [mV]',**axis_font)
+    plt.savefig('%sscan3DY.png' %(ProcessBase))
+    pyplot.show()
+
+
+
+def Scatter3DAll():
+    from matplotlib import pyplot
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = pyplot.figure()
+    ax = Axes3D(fig)
+    AmplitudeCut = 4
+    ProcessBase = '/home/daq/LaserScan/AnalysisVME/'
+    LaserScanArray1 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 123), delimiter=' ', unpack=False)
+    LaserScanArray2 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 124), delimiter=' ', unpack=False)
+    LaserScanArray3 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 125), delimiter=' ', unpack=False)
+    LaserScanArray4 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 126), delimiter=' ', unpack=False)
+    LaserScanArray5 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 127), delimiter=' ', unpack=False)
+    LaserScanArray6 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 130), delimiter=' ', unpack=False)
+    LaserScanArray7 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 131), delimiter=' ', unpack=False)
+    LaserScanArray8 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 132), delimiter=' ', unpack=False)
+
+    for pad in range (1,3):
+        x=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [49.5]*len(x)
+        z=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8 mm', c='r')
+
+    for pad in range (1,3):
+        x=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [51.5]*len(x)
+        z=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 7.61 mm', c='k')
+    
+    for pad in range (1,3):
+        x=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [53.5]*len(x)
+        z=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8.4 mm', c='c')
+
+    for pad in range (1,3):
+        x=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [55.5]*len(x)
+        z=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.25 mm', c='m')
+
+    for pad in range (1,3):
+        x=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [57.5]*len(x)
+        z=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.63 mm', c='b')
+
+    for pad in range (1,3):
+        x=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [59.5]*len(x)
+        z=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+
+    for pad in range (1,3):
+        x=LaserScanArray7[np.logical_not(LaserScanArray7[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [61.5]*len(x)
+        z=LaserScanArray7[np.logical_not(LaserScanArray7[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+
+    for pad in range (1,3):
+        x=LaserScanArray8[np.logical_not(LaserScanArray8[:,pad*2]<AmplitudeCut),0].tolist()
+        y = [63.5]*len(x)
+        z=LaserScanArray8[np.logical_not(LaserScanArray8[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+
+    AmplitudeCut=4
+    LaserScanArray1 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 122), delimiter=' ', unpack=False)
+    LaserScanArray2 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 117), delimiter=' ', unpack=False)
+    LaserScanArray3 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 118), delimiter=' ', unpack=False)
+    LaserScanArray4 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 119), delimiter=' ', unpack=False)
+    LaserScanArray5 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 120), delimiter=' ', unpack=False)
+    LaserScanArray6 = np.loadtxt('%sprocessdata_%d.txt' % (ProcessBase, 121), delimiter=' ', unpack=False)
+    for pad in range (1,9):
+        y=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),0].tolist()
+        x = [8]*len(y)
+        z=LaserScanArray1[np.logical_not(LaserScanArray1[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8 mm', c='r')
+
+    for pad in range (1,9):
+        y=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),0].tolist()
+        x = [7.61]*len(y)
+        z=LaserScanArray2[np.logical_not(LaserScanArray2[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 7.61 mm', c='k')
+    
+    for pad in range (1,9):
+        y=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),0].tolist()
+        x = [8.4]*len(y)
+        z=LaserScanArray3[np.logical_not(LaserScanArray3[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 8.4 mm', c='c')
+
+    for pad in range (1,9):
+        y=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),0].tolist()
+        x = [10.25]*len(y)
+        z=LaserScanArray4[np.logical_not(LaserScanArray4[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.25 mm', c='m')
+
+    for pad in range (1,9):
+        y=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),0].tolist()
+        x = [10.63]*len(y)
+        z=LaserScanArray5[np.logical_not(LaserScanArray5[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 10.63 mm', c='b')
+
+    for pad in range (1,9):
+        y=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),0].tolist()
+        x = [9.87]*len(y)
+        z=LaserScanArray6[np.logical_not(LaserScanArray6[:,pad*2]<AmplitudeCut),pad*2].tolist()
+        ax.scatter(x, y, z, label='Y = 9.87 mm', c='g')
+    
+    axis_font = {'fontname':'Arial', 'size':'15'}
+    ax.set_xlabel("Y Position [mm]",**axis_font)
+    ax.set_ylabel("X Position [mm]",**axis_font)
+    ax.set_zlabel("Amplitude [mV]",**axis_font)
+    ax.legend()
+    #ax.ylabel('Y Position [mm]',**axis_font)
+    #ax.xlabel("X Position [mm]",**axis_font)
+    #ax.zlabel('Amplitude [mV]',**axis_font)
+    plt.savefig('%sscan3DY.png' %(ProcessBase))
+    pyplot.show()
