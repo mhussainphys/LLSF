@@ -58,3 +58,8 @@ End of Scan:
             from AllModules import *
             Plot3DMesh(scan number, amplitude cut, number of channels)
       
+Stopping scan in the middle:
+      
+      1) source Stop2DScan script.
+      2) Stop the labview program.
+      3) source Stop2DScan script again.
