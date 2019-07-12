@@ -1,0 +1,111 @@
+#include <iostream>
+#include <fstream>
+using namespace std;
+
+void combine(TString run_number, int scan_number, float motor_pos_x, float motor_pos_y)
+{
+     TFile f1("/home/daq/Data/CMSTiming/RawDataSaver0CMSVMETiming_Run" + run_number + "_0_Raw.root", "UPDATE");
+     TTree *pulse = (TTree*)f1.Get("pulse");
+
+     TH1F * h1 = new TH1F("h1","",100,-400,400);
+     h1->StatOverflows();
+     pulse->Project("h1","amp[0]","");
+     TH1F * h2 = new TH1F("h2","",100,-400,400);
+     h2->StatOverflows();
+     pulse->Project("h2","amp[1]","");
+     TH1F * h3 = new TH1F("h3","",100,-400,400);
+     h3->StatOverflows();
+     pulse->Project("h3","amp[2]","");
+     TH1F * h4 = new TH1F("h4","",100,-400,400);
+     h4->StatOverflows();
+     pulse->Project("h4","amp[3]","");
+     TH1F * h5 = new TH1F("h5","",100,-400,400);
+     h5->StatOverflows();
+     pulse->Project("h5","amp[4]","");
+     TH1F * h6 = new TH1F("h6","",100,-400,400);
+     h6->StatOverflows();
+     pulse->Project("h6","amp[5]","");
+     TH1F * h7 = new TH1F("h7","",100,-400,400);
+     h7->StatOverflows();
+     pulse->Project("h7","amp[6]","");
+     TH1F * h8 = new TH1F("h8","",100,-400,400);
+     h8->StatOverflows();
+     pulse->Project("h8","amp[7]","");
+     TH1F * h9 = new TH1F("h9","",100,-400,400);
+     h9->StatOverflows();
+     pulse->Project("h9","amp[8]","");
+     TH1F * h10 = new TH1F("h10","",100,-400,400);
+     h10->StatOverflows();
+     pulse->Project("h10","amp[9]","");
+     TH1F * h11 = new TH1F("h11","",100,-400,400);
+     h11->StatOverflows();
+     pulse->Project("h11","amp[10]","");
+     TH1F * h12 = new TH1F("h12","",100,-400,400);
+     h12->StatOverflows();
+     pulse->Project("h12","amp[11]","");
+     TH1F * h13 = new TH1F("h13","",100,-400,400);
+     h13->StatOverflows();
+     pulse->Project("h13","amp[12]","");
+     TH1F * h14 = new TH1F("h14","",100,-400,400);
+     h14->StatOverflows();
+     pulse->Project("h14","amp[13]","");
+     TH1F * h15 = new TH1F("h15","",100,-400,400);
+     h15->StatOverflows();
+     pulse->Project("h15","amp[14]","");
+     TH1F * h16 = new TH1F("h16","",100,-400,400);
+     h16->StatOverflows();
+     pulse->Project("h16","amp[15]","");
+     TH1F * h17 = new TH1F("h17","",100,-400,400);
+     h17->StatOverflows();
+     pulse->Project("h17","amp[16]","");
+     TH1F * h18 = new TH1F("h18","",100,-400,400);
+     h18->StatOverflows();
+     pulse->Project("h18","amp[17]","");
+     TH1F * h19 = new TH1F("h19","",100,-400,400);
+     h19->StatOverflows();
+     pulse->Project("h19","amp[18]","");
+     TH1F * h20 = new TH1F("h20","",100,-400,400);
+     h20->StatOverflows();
+     pulse->Project("h20","amp[19]","");
+     TH1F * h21 = new TH1F("h21","",100,-400,400);
+     h21->StatOverflows();
+     pulse->Project("h21","amp[20]","");
+     TH1F * h22 = new TH1F("h22","",100,-400,400);
+     h22->StatOverflows();
+     pulse->Project("h22","amp[21]","");
+     TH1F * h23 = new TH1F("h23","",100,-400,400);
+     h23->StatOverflows();
+     pulse->Project("h23","amp[22]","");
+     TH1F * h24 = new TH1F("h24","",100,-400,400);
+     h24->StatOverflows();
+     pulse->Project("h24","amp[23]","");
+     TH1F * h25 = new TH1F("h25","",100,-400,400);
+     h25->StatOverflows();
+     pulse->Project("h25","amp[24]","");
+     TH1F * h26 = new TH1F("h26","",100,-400,400);
+     h26->StatOverflows();
+     pulse->Project("h26","amp[25]","");
+     TH1F * h27 = new TH1F("h27","",100,-400,400);
+     h27->StatOverflows();
+     pulse->Project("h27","amp[26]","");
+     TH1F * h28 = new TH1F("h28","",100,-400,400);
+     h28->StatOverflows();
+     pulse->Project("h28","amp[27]","");
+     TH1F * h29 = new TH1F("h29","",100,-400,400);
+     h29->StatOverflows();
+     pulse->Project("h29","amp[28]","");
+     TH1F * h30 = new TH1F("h30","",100,-400,400);
+     h30->StatOverflows();
+     pulse->Project("h30","amp[29]","");
+
+     //Writing data to a file
+     TString file1 = Form("/home/daq/LaserScan/AnalysisVME/processdata_%i.txt", scan_number);
+     ofstream myfile;
+     //cout<<file1<<endl;
+     myfile.open(file1, ios::app);
+     myfile<<motor_pos_x<<" "<<motor_pos_y<<" "<<run_number<<" "<<h1->GetMean()<<" "<<h2->GetMean()<<" "<<h3->GetMean()<<" "<<h4->GetMean()<<" "<<h5->GetMean()<<" "<<h6->GetMean()<<" "<<h7->GetMean()<<" "<<h8->GetMean()<<" "<<h9->GetMean()<<" "<<h10->GetMean()<<" "<<h11->GetMean()<<" "<<h12->GetMean()<<" "<<h13->GetMean()<<" "<<h14->GetMean()<<" "<<h15->GetMean()<<" "<<h16->GetMean()<<" "<<h17->GetMean()<<" "<<h18->GetMean()<<endl;
+     myfile.close();
+
+     f1.Close();
+     //f2.Close();
+   }

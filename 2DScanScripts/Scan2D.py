@@ -79,6 +79,9 @@ wait_for_file(MotorReadyToMoveFile, 0,'Waiting for motor to get to the initial 2
 InitialMotorPositionY, InitialMotorPositionX = motor_pos()
 ScanStartTime = datetime.now()
 
+
+ScanStatus = WriteStatusFile()
+
 while not StopScan:
 
     LastIterationBool = wait_for_file(MotorReadyToMoveFile, 0,'Waiting for motor to get to the next position')
@@ -90,42 +93,55 @@ while not StopScan:
 
     print '############################'
     CurrentMotorPositionY, CurrentMotorPositionX = motor_pos()
-    print '\n\nCurrent 2D motor position (x,y) : (%d,%d)' % (CurrentMotorPositionX, CurrentMotorPositionY) #Motor is not guaranteed to have moved
+    print '\n\nCurrent 2D motor position (x,y) : (%f,%f)' % (CurrentMotorPositionX, CurrentMotorPositionY) #Motor is not guaranteed to have moved
     
     print 'Run Number: %d \n' % RunNumber
     if run_registry_exists(RunNumber): 
         print "ERROR: this run number already exists. Exiting!"
-        break    
+        break   
 
     XMotorPositionList.append(CurrentMotorPositionX)
     YMotorPositionList.append(CurrentMotorPositionY)
     RunNumberList.append(RunNumber)
 
-    if not debug: start_ots(RunNumber) #start ots-daq (4s runs)
-    if not debug: stop_ots()  #stop otsdaq (1 second delay after stop)
+    if not debug: start_ots(RunNumber) #start ots-daq (2.5s runs)
+    MeasTimestamp = (datetime.now() - datetime.strptime("2000-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")).total_seconds() - 3600
+    TimestampList.append(MeasTimestamp)
+    if not debug: stop_ots()  #stop otsdaq (0.8 second delay after stop)
 
     MotorReadyToMoveHandle = open(MotorReadyToMoveFile, "w")
     MotorReadyToMoveHandle.write("1")
     MotorReadyToMoveHandle.close()
+    
+    # Write scan file in the middle of the scan
+    MeasTemp, MeasVoltage, MeasCurrent = ConvertEnv(MeasTimestamp)
+    ParameterList = [RunNumber, MeasTimestamp, CurrentMotorPositionX, CurrentMotorPositionY, MeasVoltage, MeasCurrent, MeasTemp, BoardName, SensorName, ScanStepSizeY, ScanStepSizeX, AmplifierVoltage, LaserAttenuation, LaserFrequency, BeamSize]
+    WriteLaserScanDataFile(ScanNumber, ParameterList)
 
-    RunNumber = RunNumber + 1            
+    RunNumber = RunNumber + 1
+    tmpStatusFile, ScanStatus = ReadStatusFile()
+    if not ScanStatus:
+        StopScan = True     
+
+CloseFile(tmpStatusFile)
 
 #************************************************************************************************************************
 #************************************************************************************************************************
 #************************************************************************************************************************
 #************************************************************************************************************************
 
+if WriteEndScanFiles:
+    print '\n\n######################## Writing Run and Scan files for the scan ##############################\n\n'
+    for i in range(0, RunNumber - StartRunNumber):
+       if run_exists(RunNumberList[i]):
+          Temp20,Voltage1,Current1 = ConvertEnv(TimestampList[i])
+          RunFileParametersList = [RunNumberList[i], ScanNumber, XMotorPositionList[i], YMotorPositionList[i], BoardName, SensorName, BiasVoltage, ScanStepSizeY, ScanStepSizeX, AmplifierVoltage, LaserAttenuation, LaserFrequency, BeamSize, BoardTemperature, Temp20,Voltage1,Current1]      
+          WriteFile(RunFileParametersList, "run")
+       else:
+          print "Run %i failed." % RunNumberList[i]
 
-print '\n\n######################## Writing Run and Scan files for the scan ##############################\n\n'
-for i in range(0, RunNumber - StartRunNumber):
-   if run_exists(RunNumberList[i]):
-      RunFileParametersList = [RunNumberList[i], ScanNumber, XMotorPositionList[i], YMotorPositionList[i], BoardName, SensorName, BiasVoltage, ScanStepSizeY, ScanStepSizeX, AmplifierVoltage, LaserAttenuation, LaserFrequency, BeamSize, BoardTemperature]
-      WriteFile(RunFileParametersList, "run")
-   else:
-      print "Run %i failed." % RunNumberList[i]
-
-ScanFileParametersList = [ScanNumber, StartRunNumber, RunNumber - 1, InitialMotorPositionY, CurrentMotorPositionY, InitialMotorPositionX, CurrentMotorPositionX, BoardName, BiasVoltage, ScanStepSizeY, ScanStepSizeX, AmplifierVoltage, LaserAttenuation, LaserFrequency, BeamSize, BoardTemperature]
-WriteFile(ScanFileParametersList, "scan")
+    ScanFileParametersList = [ScanNumber, StartRunNumber, RunNumber - 1, InitialMotorPositionY, CurrentMotorPositionY, InitialMotorPositionX, CurrentMotorPositionX, BoardName, BiasVoltage, ScanStepSizeY, ScanStepSizeX, AmplifierVoltage, LaserAttenuation, LaserFrequency, BeamSize, BoardTemperature]
+    WriteFile(ScanFileParametersList, "scan")
 
 print '\n#############################################################################'
 print '################################ 2D scan complete #############################'
